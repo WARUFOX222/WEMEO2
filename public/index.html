@@ -1,64 +1,51 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Viewer</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: black;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      overflow: hidden;
-    }
-    #container {
-      position: relative;
-      width: 56.25vh; /* 9:16 ratio width based on viewport height */
-      height: 100vh;
-      background: #000;
-    }
-    canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      object-fit: cover;
-    }
-    #selectRoom {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 999;
-    }
-  </style>
-</head>
-<body>
-  <div id="container">
-    <select id="selectRoom">
-      <option value="room1">Room 1</option>
-      <option value="room2">Room 2</option>
-    </select>
-    <canvas id="videoCanvas" width="720" height="1280"></canvas>
-  </div>
-  <script>
-    const canvas = document.getElementById('videoCanvas');
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    const params = new URLSearchParams(location.search);
-    const room = params.get("room") || "room1";
-    const ws = new WebSocket('wss://' + location.host + '/?room=' + room);
+// โครงร่างเริ่มต้นของโปรเจกต์ webcam stream viewer ตามที่คุณต้องการ
 
-    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    ws.onmessage = (event) => {
-      const blob = new Blob([event.data], { type: 'image/jpeg' });
-      img.src = URL.createObjectURL(blob);
-    };
+// 1. server.js
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+const path = require("path");
 
-    document.getElementById('selectRoom').addEventListener('change', e => {
-      location.href = '?room=' + e.target.value;
-    });
-  </script>
-</body>
-</html>
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+const streams = {};
+
+wss.on("connection", (ws, req) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const room = url.searchParams.get("room");
+
+  if (!room) return ws.close();
+
+  if (!streams[room]) streams[room] = { clients: new Set(), latest: null };
+  streams[room].clients.add(ws);
+  console.log("Client connected to room:", room);
+
+  ws.on("message", (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      if (data.type === "frame" && data.frame) {
+        streams[room].latest = data.frame;
+        streams[room].clients.forEach((client) => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: "frame", frame: data.frame, room }));
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Invalid message format", e);
+    }
+  });
+
+  ws.on("close", () => {
+    streams[room].clients.delete(ws);
+    if (streams[room].clients.size === 0) delete streams[room];
+    console.log("Client disconnected from room:", room);
+  });
+});
+
+app.use(express.static(path.join(__dirname, "public")));
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => console.log(`Server ready on port ${PORT}`));
