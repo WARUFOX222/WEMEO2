@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Viewer</title>
+  <style>
+    body { margin: 0; background: black; color: white; }
+    canvas { width: 100%; height: auto; background: #000; }
+    #selectRoom { position: absolute; top: 10px; left: 10px; z-index: 999; }
+  </style>
+</head>
+<body>
+  <select id="selectRoom">
+    <option value="room1">Room 1</option>
+    <option value="room2">Room 2</option>
+  </select>
+  <canvas id="videoCanvas" width="1280" height="720"></canvas>
+  <script>
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    const ws = new WebSocket('wss://' + location.host + '/?room=room1');
+
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ws.onmessage = (event) => {
+      const blob = new Blob([event.data], { type: 'image/jpeg' });
+      img.src = URL.createObjectURL(blob);
+    };
+
+    document.getElementById('selectRoom').addEventListener('change', e => {
+      location.href = '?room=' + e.target.value;
+    });
+  </script>
+</body>
+</html>
